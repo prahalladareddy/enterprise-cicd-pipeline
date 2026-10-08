@@ -1,0 +1,40 @@
+name: Enterprise Multi-VM Deployment Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: 1. Checkout Repository Code
+        uses: actions/checkout@v4
+
+      - name: 2. Build Docker Image on Runner VM
+        run: |
+          echo "Building Docker image on Runner..."
+          docker build -t enterprise-app:latest .
+
+      - name: 3. Export Docker Image Artifact
+        run: |
+          echo "Saving Docker image to tar archive..."
+          docker save enterprise-app:latest -o /tmp/enterprise-app.tar
+
+      - name: 4. Secure Transfer Image to Deployment VM
+        run: |
+          echo "Transferring image to Target VM (172.31.35.5)..."
+          scp -o StrictHostKeyChecking=no /tmp/enterprise-app.tar praha@172.31.35.5:/tmp/enterprise-app.tar
+
+      - name: 5. Deploy and Run Container on Target VM
+        run: |
+          echo "Deploying on Deployment VM..."
+          ssh -o StrictHostKeyChecking=no praha@172.31.35.5 "docker load -i /tmp/enterprise-app.tar && docker stop my-web-app 2>/dev/null || true && docker rm my-web-app 2>/dev/null || true && docker run -d --name my-web-app -p 80:8080 --restart always enterprise-app:latest && rm -f /tmp/enterprise-app.tar"
+
+      - name: 6. Clean Runner Artifacts
+        run: |
+          rm -f /tmp/enterprise-app.tar
+          echo "Deployment Completed Successfully!"
