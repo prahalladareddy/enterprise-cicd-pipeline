@@ -28,18 +28,18 @@ jobs:
         if: ${{ github.event.inputs.action == 'rollback' }}
         run: |
           echo "Initiating Rollback on Deployment VM (172.31.35.5)..."
-          ssh -o StrictHostKeyChecking=no praha@172.31.35.5 << 'EOF'
+          ssh -o StrictHostKeyChecking=no praha@172.31.35.5 "
             if docker images | grep -q 'enterprise-app.*previous'; then
-              echo "Found previous stable image. Rolling back..."
-              docker stop my-web-app || true
-              docker rm my-web-app || true
-              docker run -d --name my-web-app -p 80:8080 --restart always enterprise-app:previous
-              echo "Rollback successful!"
+              echo 'Found previous stable image. Rolling back...' &&
+              docker stop my-web-app 2>/dev/null || true &&
+              docker rm my-web-app 2>/dev/null || true &&
+              docker run -d --name my-web-app -p 80:8080 --restart always enterprise-app:previous &&
+              echo 'Rollback successful!'
             else
-              echo "Error: No previous image found to rollback!"
+              echo 'Error: No previous image found to rollback!' &&
               exit 1
             fi
-          EOF
+          "
 
       # --- DEPLOY BRANCH ---
       - name: 2. Build Docker Image with Versioning
@@ -60,31 +60,18 @@ jobs:
         if: ${{ github.event.inputs.action != 'rollback' }}
         run: |
           IMAGE_TAG=${{ github.sha }}
-          ssh -o StrictHostKeyChecking=no praha@172.31.35.5 << EOF
-            # 1. Load newly transferred image
-            docker load -i /tmp/enterprise-app.tar
-            rm -f /tmp/enterprise-app.tar
+          ssh -o StrictHostKeyChecking=no praha@172.31.35.5 "
+            docker load -i /tmp/enterprise-app.tar &&
+            rm -f /tmp/enterprise-app.tar &&
+            (docker inspect my-web-app >/dev/null 2>&1 && docker tag \$(docker inspect --format='{{.Image}}' my-web-app) enterprise-app:previous || true) &&
+            docker stop my-web-app 2>/dev/null || true &&
+            docker rm my-web-app 2>/dev/null || true &&
+            docker run -d --name my-web-app -p 80:8080 --restart always enterprise-app:$IMAGE_TAG &&
+            sleep 2 &&
+            curl -f -s http://localhost:8080 > /dev/null && echo 'Deployment Succeeded!'
+          "
 
-            # 2. Tag current running image as 'previous' before replacing
-            if docker inspect my-web-app >/dev/null 2>&1; then
-              RUNNING_IMG=\$(docker inspect --format='{{.Image}}' my-web-app)
-              docker tag \$RUNNING_IMG enterprise-app:previous
-            fi
-
-            # 3. Stop and replace with new image
-            docker stop my-web-app || true
-            docker rm my-web-app || true
-            docker run -d --name my-web-app -p 80:8080 --restart always enterprise-app:\$IMAGE_TAG
-
-            # 4. Automated Smoke / Health Check
-            sleep 3
-            if curl -f -s http://localhost:8080 > /dev/null; then
-              echo "Deployment & Health Check Succeeded!"
-            else
-              echo "Health check failed! Automatically rolling back..."
-              docker stop my-web-app || true
-              docker rm my-web-app || true
-              docker run -d --name my-web-app -p 80:8080 --restart always enterprise-app:previous
-              exit 1
-            fi
-          EOF
+      - name: 5. Clean Runner Artifacts
+        if: always()
+        run: |
+          rm -f /tmp/enterprise-app.tar
