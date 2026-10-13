@@ -2,7 +2,7 @@
 FROM nginx:alpine
 
 # Custom HTML page
-RUN echo "<h1>Enterprise Multi-VM CI/CD Pipeline Deployed Successfully!</h1>" > /usr/share/nginx/html/index.html
+RUN echo "<h1>Enterprise Multi-VM CI/CD Pipeline Successfully Deployed!</h1>" > /usr/share/nginx/html/index.html
 
 # Expose port
 EXPOSE 8080
